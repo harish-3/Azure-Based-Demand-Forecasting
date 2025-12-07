@@ -1,0 +1,150 @@
+# -------------------------
+# PYTHON BACKEND
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+backend/env/
+backend/venv/
+
+# Model files (exclude large model files)
+# Uncomment specific lines if you want to include small model files
+backend/models/*.pkl
+backend/models/*.h5
+backend/models/*.joblib
+*.pkl
+*.h5
+*.joblib
+
+# Data files (exclude large datasets)
+# Uncomment specific lines if you want to include small data files
+backend/data/raw/
+backend/data/processed/
+backend/data/feature_engineered/*.csv
+*.csv
+*.xlsx
+*.parquet
+*.json.gz
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*.ipynb
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# -------------------------
+# FRONTEND (React/Vite)
+# -------------------------
+frontend/node_modules/
+frontend/.vite/
+frontend/.cache/
+
+# Frontend builds
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
+
+# Frontend logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# -------------------------
+# OS / EDITOR
+# -------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# -------------------------
+# PROJECT SPECIFIC
+# -------------------------
+# History files
+.history/
+*.history
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Misc
+*.log
+*.pid
+*.seed
+*.pid.lock

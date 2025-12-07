@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  @apply bg-white text-gray-900 transition-colors duration-300;
+}
+
+html.dark,
+body.dark {
+  @apply bg-gray-900 text-gray-100;
+}
+
+/* Add these styles at the end of index.css! */
+.sidebar {
+  width: 60px;
+  background: #181d2a;
+  display: flex;
+  flex-direction: column;
+  padding-top: 15px;
+}
+
+.sidebar-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  width: 48px;
+  margin: 12px auto;
+  border-radius: 12px;
+  background: #232949;
+  transition: background 0.2s;
+}
+
+.sidebar-icon-container.active {
+  background: #466CF2;
+}
+
+.sidebar-icon-container:hover {
+  background: #2e3553;
+}
+
+.sidebar-icon-container img,
+.sidebar-icon-container svg {
+  width: 28px;
+  height: 28px;
+}
