@@ -91,11 +91,10 @@ function ChatAssistant({ isOpen, onClose }) {
         {messages.map((m, idx) => (
           <div
             key={idx}
-            className={`max-w-[85%] px-3 py-2 rounded-xl ${
-              m.from === "user"
-                ? "ml-auto bg-blue-600 text-white"
-                : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100"
-            }`}
+            className={`max-w-[85%] px-3 py-2 rounded-xl ${m.from === "user"
+              ? "ml-auto bg-blue-600 text-white"
+              : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+              }`}
           >
             {m.text}
           </div>
@@ -173,17 +172,19 @@ function KPICard({ title, value, delta, subtitle, icon }) {
   );
 }
 
-function SystemUsageTable({ forecastData = [] }) {
+function SystemUsageTable({ forecastData = [], storageData = [] }) {
   const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  
+
   // Use forecast data if available, otherwise use fallback
   const cpuUsageData = forecastData.length > 0
     ? forecastData.slice(0, 7).map(v => Math.round(v))
     : labels.map(() => 0);
-  
-  // Storage usage estimated as 85% of CPU usage
-  const storageUsageData = cpuUsageData.map(cpu => Math.round(cpu * 0.85));
-  
+
+  // Use real storage data if available, otherwise fallback
+  const storageUsageData = storageData.length > 0
+    ? storageData.slice(0, 7).map(v => Math.round(v))
+    : labels.map(() => 0);
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4 text-[#2d2a1f] dark:text-orange-100">
@@ -195,7 +196,7 @@ function SystemUsageTable({ forecastData = [] }) {
             <tr>
               <th className="py-3 px-4 border">Day</th>
               <th className="py-3 px-4 border">CPU Usage (%)</th>
-              <th className="py-3 px-4 border">Storage Usage (%)</th>
+              <th className="py-3 px-4 border">Storage Usage (GB)</th>
             </tr>
           </thead>
           <tbody>
@@ -209,7 +210,7 @@ function SystemUsageTable({ forecastData = [] }) {
                   {cpuUsageData[index]}%
                 </td>
                 <td className="py-3 px-4 border font-medium text-[#5ca28f] dark:text-green-300">
-                  {storageUsageData[index]}%
+                  {storageUsageData[index]} GB
                 </td>
               </tr>
             ))}
@@ -378,6 +379,7 @@ function DashboardLayout() {
   const [barChartData, setBarChartData] = useState([]);
   const [pieChartData, setPieChartData] = useState([]);
   const [lineChartData, setLineChartData] = useState([]);
+  const [storageChartData, setStorageChartData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -389,14 +391,18 @@ function DashboardLayout() {
       try {
         // Fetch 7-day forecast for charts
         const forecastResponse = await fetchForecast7();
-        const forecastValues = forecastResponse.predictions || [];
+        const forecastValues = forecastResponse.predictions_cpu || forecastResponse.predictions || [];
+        const storageValues = forecastResponse.predictions_storage || [];
 
         // Fetch comprehensive report for KPIs
         const reportResponse = await fetchReport(10000, 8.5);
         const forecastSummary = reportResponse.forecast_summary || {};
         const avgForecast = forecastSummary.avg_forecast || 0;
-        const minForecast = forecastSummary.min_forecast || 0;
-        const maxForecast = forecastSummary.max_forecast || 0;
+
+        // Calculate average storage from real forecast
+        const avgStorage = storageValues.length > 0
+          ? storageValues.reduce((a, b) => a + b, 0) / storageValues.length
+          : avgForecast * 0.85;
 
         // Fetch model metrics
         const metricsResponse = await fetchMetrics();
@@ -409,6 +415,11 @@ function DashboardLayout() {
         const previousCpu = forecastValues.length > 1 ? forecastValues[1] : currentCpu;
         const cpuDelta = currentCpu && previousCpu ? Math.round(currentCpu - previousCpu) : 0;
 
+        // Calculate Storage Delta
+        const currentStorage = storageValues[0] || avgStorage;
+        const previousStorage = storageValues.length > 1 ? storageValues[1] : currentStorage;
+        const storageDelta = currentStorage && previousStorage ? Math.round(currentStorage - previousStorage) : 0;
+
         // Set KPI data
         setKpiData([
           {
@@ -419,9 +430,9 @@ function DashboardLayout() {
           },
           {
             title: "Storage Usage",
-            value: `${Math.round((avgForecast * 0.85) || 0)}%`,
-            delta: Math.round(cpuDelta * 0.9),
-            subtitle: "Estimated from CPU forecast",
+            value: `${Math.round(avgStorage)} GB`,
+            delta: storageDelta,
+            subtitle: "Real Storage Forecast",
           },
           {
             title: "Server Uptime",
@@ -433,10 +444,10 @@ function DashboardLayout() {
 
         // Set bar chart data (current vs forecast)
         const currentValues = forecastValues.slice(0, 7);
-        const forecastValues7 = forecastValues.length >= 7 
+        const forecastValues7 = forecastValues.length >= 7
           ? forecastValues.slice(0, 7)
           : [...forecastValues, ...Array(7 - forecastValues.length).fill(avgForecast)];
-        
+
         setBarChartData(
           days.slice(0, Math.min(7, forecastValues7.length)).map((day, idx) => ({
             name: day,
@@ -462,6 +473,7 @@ function DashboardLayout() {
             value: Math.round(forecastValues[idx] || avgForecast),
           }))
         );
+        setStorageChartData(storageValues);
       } catch (err) {
         console.error("Error loading dashboard data:", err);
         setError(err.message);
@@ -534,7 +546,10 @@ function DashboardLayout() {
                     <TrendLineChart data={lineChartData} />
                   </div>
                   <div className="bg-[#f7f7f5] dark:bg-gradient-to-br dark:from-fuchsia-600 dark:to-orange-400 border border-[#b7d2f7] dark:border-none rounded-xl shadow px-6 py-6">
-                    <SystemUsageTable forecastData={lineChartData.map(d => d.value)} />
+                    <SystemUsageTable
+                      forecastData={lineChartData.map(d => d.value)}
+                      storageData={storageChartData}
+                    />
                   </div>
                 </div>
               </>

@@ -19,7 +19,9 @@ import os
 import traceback
 
 # Import custom utility modules
-from forecast_utils import recursive_forecast_cpu, prepare_single_prediction_features
+
+# Import custom utility modules
+from forecast_utils import recursive_forecast_cpu, recursive_forecast_storage, prepare_single_prediction_features
 from capacity_utils import analyze_capacity, detailed_capacity_report, optimization_suggestor
 from monitoring_utils import monitoring_stats, comprehensive_model_health
 
@@ -35,9 +37,14 @@ print("=" * 60)
 
 try:
     # Load trained CPU demand model
-    model_path = os.path.join("models", "rf_cpu_model.pkl")
-    cpu_model = joblib.load(model_path)
-    print(f"✅ Loaded CPU model from: {model_path}")
+    cpu_model_path = os.path.join("models", "rf_cpu_model.pkl")
+    cpu_model = joblib.load(cpu_model_path)
+    print(f"✅ Loaded CPU model from: {cpu_model_path}")
+
+    # Load trained Storage demand model
+    storage_model_path = os.path.join("models", "storage_demand_model.pkl")
+    storage_model = joblib.load(storage_model_path)
+    print(f"✅ Loaded Storage model from: {storage_model_path}")
     
     # Load ML-ready dataset
     data_path = os.path.join("data", "feature_engineered", "mlmodeltrainingdataset.csv")
@@ -113,6 +120,11 @@ def metrics():
                 "n_features": len(cpu_model.feature_names_in_),
                 "features": cpu_model.feature_names_in_.tolist()
             },
+            "storage_model": {
+                "status": "loaded",
+                "type": type(storage_model).__name__,
+                "n_features": len(storage_model.feature_names_in_)
+            },
             "dataset": {
                 "status": "loaded",
                 "shape": df.shape,
@@ -172,24 +184,41 @@ def predict_cpu():
         }), 500
 
 
+# Region multipliers for simulation
+REGION_MULTIPLIERS = {
+    "East": 1.0,
+    "West": 1.15,
+    "North": 0.9,
+    "South": 1.05,
+    "East US": 1.0, 
+    "West Europe": 0.95,
+    "Central India": 1.2
+}
+
 @app.route("/api/forecast_7", methods=["GET"])
 def forecast_7():
     """
-    7-day recursive CPU demand forecast.
-    
-    Response:
-        {
-            "forecast_days": 7,
-            "predictions": [78.5, 79.2, 80.1, ...]
-        }
+    7-day recursive CPU & Storage demand forecast.
+    Optional query param: region (default: "East")
     """
     try:
+        region = request.args.get("region", "East")
+        
         # Generate 7-day forecast
-        predictions = recursive_forecast_cpu(df, cpu_model, n_days=7)
+        predictions_cpu = recursive_forecast_cpu(df, cpu_model, n_days=7)
+        predictions_storage = recursive_forecast_storage(df, storage_model, n_days=7)
+        
+        # Apply regional variation
+        multiplier = REGION_MULTIPLIERS.get(region, 1.0)
+        predictions_cpu = [round(p * multiplier, 2) for p in predictions_cpu]
+        predictions_storage = [round(p * multiplier, 2) for p in predictions_storage]
         
         return jsonify({
             "forecast_days": 7,
-            "predictions": predictions
+            "region": region,
+            "predictions": predictions_cpu,          # Kept for backward compat
+            "predictions_cpu": predictions_cpu,      # Explicit name
+            "predictions_storage": predictions_storage # New field
         })
         
     except Exception as e:
@@ -202,21 +231,27 @@ def forecast_7():
 @app.route("/api/forecast_30", methods=["GET"])
 def forecast_30():
     """
-    30-day recursive CPU demand forecast.
-    
-    Response:
-        {
-            "forecast_days": 30,
-            "predictions": [78.5, 79.2, 80.1, ...]
-        }
+    30-day recursive CPU & Storage demand forecast.
+    Optional query param: region (default: "East")
     """
     try:
+        region = request.args.get("region", "East")
+        
         # Generate 30-day forecast
-        predictions = recursive_forecast_cpu(df, cpu_model, n_days=30)
+        predictions_cpu = recursive_forecast_cpu(df, cpu_model, n_days=30)
+        predictions_storage = recursive_forecast_storage(df, storage_model, n_days=30)
+        
+        # Apply regional variation
+        multiplier = REGION_MULTIPLIERS.get(region, 1.0)
+        predictions_cpu = [round(p * multiplier, 2) for p in predictions_cpu]
+        predictions_storage = [round(p * multiplier, 2) for p in predictions_storage]
         
         return jsonify({
             "forecast_days": 30,
-            "predictions": predictions
+            "region": region,
+            "predictions": predictions_cpu,          # Kept for backward compat
+            "predictions_cpu": predictions_cpu,      # Explicit name
+            "predictions_storage": predictions_storage # New field
         })
         
     except Exception as e:

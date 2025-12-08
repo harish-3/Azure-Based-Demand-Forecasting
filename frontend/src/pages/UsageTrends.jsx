@@ -34,22 +34,23 @@ export default function UsageTrends() {
       setError(null);
       try {
         // Fetch 7-day forecast for weekly data
-        const forecast7Response = await fetchForecast7();
+        const forecast7Response = await fetchForecast7(region);
         const forecast7 = forecast7Response.predictions || [];
-        
+
         // Fetch 30-day forecast for monthly data
-        const forecast30Response = await fetchForecast30();
+        const forecast30Response = await fetchForecast30(region);
         const forecast30 = forecast30Response.predictions || [];
 
         // Use forecast data for "after" (current/forecasted) values
-        const cpuAfterData = forecast7.slice(0, weekLabels.length).map(v => Math.round(v));
-        setCpuAfter(cpuAfterData);
+        const cpuAfterData = forecast7Response.predictions_cpu || forecast7Response.predictions || [];
+        setCpuAfter(cpuAfterData.map(v => Math.round(v)));
 
         // "Before" values estimated as 80% of after (simulating improvement)
         setCpuBefore(cpuAfterData.map(v => Math.round(v * 0.8)));
 
-        // Storage values estimated from CPU
-        setStorageValues(cpuAfterData.map(v => Math.round(v * 0.85)));
+        // Real Storage values from backend model
+        const storageData = forecast7Response.predictions_storage || [];
+        setStorageValues(storageData.map(v => Math.round(v)));
 
         // Monthly values from 30-day forecast (averaged per week)
         const monthlyData = [];
@@ -90,7 +91,7 @@ export default function UsageTrends() {
       id: 2,
       title: `CPU Usage Trend – ${region} Region`,
       labels: weekLabels,
-      datasets: [{ label: region, data: storageValues }],
+      datasets: [{ label: region, data: storageValues, unit: "GB" }],
       description: chartDescriptions.regionTrend,
     },
     {
@@ -267,11 +268,10 @@ export default function UsageTrends() {
           <div
             key={i}
             onClick={() => setCurrentIndex(i)}
-            className={`w-3 h-3 rounded-full cursor-pointer ${
-              i === currentIndex
-                ? "bg-[#557399] dark:bg-orange-400"
-                : "bg-[#b7d2f7] dark:bg-gray-600"
-            }`}
+            className={`w-3 h-3 rounded-full cursor-pointer ${i === currentIndex
+              ? "bg-[#557399] dark:bg-orange-400"
+              : "bg-[#b7d2f7] dark:bg-gray-600"
+              }`}
           ></div>
         ))}
       </div>

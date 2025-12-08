@@ -42,18 +42,19 @@ export async function fetchMetrics() {
   return apiRequest("/api/metrics");
 }
 
+
 /**
  * Get 7-day CPU forecast
  */
-export async function fetchForecast7() {
-  return apiRequest("/api/forecast_7");
+export async function fetchForecast7(region = "East") {
+  return apiRequest(`/api/forecast_7?region=${encodeURIComponent(region)}`);
 }
 
 /**
  * Get 30-day CPU forecast
  */
-export async function fetchForecast30() {
-  return apiRequest("/api/forecast_30");
+export async function fetchForecast30(region = "East") {
+  return apiRequest(`/api/forecast_30?region=${encodeURIComponent(region)}`);
 }
 
 /**

@@ -166,6 +166,98 @@ def recursive_forecast_cpu(df, model, n_days=7):
     return predictions
 
 
+def recursive_forecast_storage(df, model, n_days=7):
+    """
+    Recursive Storage demand forecasting with automatic feature engineering.
+    """
+    df = df.copy()
+    feature_cols = model.feature_names_in_
+    history = df.tail(7).copy()
+    predictions = []
+    
+    for day in range(n_days):
+        last = history.iloc[-1].copy()
+        
+        # 1) UPDATE DATE FEATURES
+        if "month" in last:
+            last["month"] = (last["month"] % 12) + 1
+        if "year" in last:
+            if last["month"] == 1:
+                last["year"] += 1
+        if "is_weekend" in last:
+            last["is_weekend"] = 1 - last["is_weekend"]
+        
+        # 2) UPDATE LAG FEATURES
+        if "usage_cpu_lag_1" in last:
+            last["usage_cpu_lag_1"] = history["usage_cpu"].iloc[-1]
+        if "usage_storage_lag_1" in last:
+            last["usage_storage_lag_1"] = history["usage_storage"].iloc[-1]
+        if "users_active_lag_1" in last:
+            last["users_active_lag_1"] = history["users_active"].iloc[-1]
+            
+        if len(history) >= 3:
+            if "usage_cpu_lag_3" in last:
+                last["usage_cpu_lag_3"] = history["usage_cpu"].iloc[-3]
+            if "usage_storage_lag_3" in last:
+                last["usage_storage_lag_3"] = history["usage_storage"].iloc[-3]
+            if "users_active_lag_3" in last:
+                last["users_active_lag_3"] = history["users_active"].iloc[-3]
+                
+        if len(history) >= 7:
+            if "usage_cpu_lag_7" in last:
+                last["usage_cpu_lag_7"] = history["usage_cpu"].iloc[-7]
+            if "usage_storage_lag_7" in last:
+                last["usage_storage_lag_7"] = history["usage_storage"].iloc[-7]
+            if "users_active_lag_7" in last:
+                last["users_active_lag_7"] = history["users_active"].iloc[-7]
+        
+        # 3) UPDATE ROLLING FEATURES
+        for col in ["usage_cpu", "usage_storage", "users_active"]:
+            last3 = history[col].tail(3)
+            if f"{col}_rolling_mean_3" in last:
+                last[f"{col}_rolling_mean_3"] = last3.mean()
+            if f"{col}_rolling_std_3" in last:
+                last[f"{col}_rolling_std_3"] = last3.std()
+            
+            last7 = history[col].tail(7)
+            if f"{col}_rolling_mean_7" in last:
+                last[f"{col}_rolling_mean_7"] = last7.mean()
+            if f"{col}_rolling_std_7" in last:
+                last[f"{col}_rolling_std_7"] = last7.std()
+        
+        # 4) UPDATE DERIVED FEATURES
+        epsilon = 1e-6
+        if "cpu_per_user" in last:
+            last["cpu_per_user"] = last["usage_cpu_lag_1"] / (last["users_active_lag_1"] + epsilon)
+        if "storage_per_user" in last:
+            last["storage_per_user"] = last["usage_storage_lag_1"] / (last["users_active_lag_1"] + epsilon)
+        if "cpu_storage_ratio" in last:
+            last["cpu_storage_ratio"] = last["usage_cpu_lag_1"] / (last["usage_storage_lag_1"] + epsilon)
+        if "econ_demand_ratio" in last:
+            last["econ_demand_ratio"] = last["economic_index"] / (last["cloud_market_demand"] + epsilon)
+        if "system_stress" in last:
+            last["system_stress"] = (last["usage_cpu_lag_1"] + last["usage_storage_lag_1"] + last["users_active_lag_1"])
+        if "cpu_utilization_ratio" in last:
+            last["cpu_utilization_ratio"] = last["usage_cpu_lag_1"] / 100.0
+        if "storage_efficiency" in last:
+            last["storage_efficiency"] = last["usage_storage_lag_1"] / (last["users_active_lag_1"] + epsilon)
+            
+        # 5) MAKE PREDICTION
+        ordered = last.reindex(feature_cols)
+        row = pd.DataFrame([ordered], columns=feature_cols)
+        pred = model.predict(row)[0]
+        predictions.append(float(pred))
+        
+        # 6) UPDATE HISTORY
+        last["usage_storage"] = pred  # Update storage usage
+        # Assuming CPU usage stays constant or follows a simple trend if we don't have a model for it simultaneously
+        # For better accuracy, we should co-simulate, but for now we'll stick to updating storage.
+        
+        history = pd.concat([history, pd.DataFrame([last])], ignore_index=True)
+        
+    return predictions
+
+
 def prepare_single_prediction_features(input_data, df):
     """
     Prepare features for a single prediction from user input.
