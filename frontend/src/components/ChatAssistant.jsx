@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiRequest } from "../services/api";
 
 function ChatAssistant({ isOpen, onClose }) {
   const [messages, setMessages] = useState([
@@ -33,13 +34,10 @@ function ChatAssistant({ isOpen, onClose }) {
         { role: "user", content: userMsg.text },
       ];
 
-      const res = await fetch("http://localhost:5000/api/chat", {
+      const data = await apiRequest("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages }),
       });
-
-      const data = await res.json();
       const botMsg = {
         from: "bot",
         text: data.reply || "Sorry, I could not answer that.",

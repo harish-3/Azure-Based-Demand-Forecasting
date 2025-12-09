@@ -19,11 +19,13 @@ import {
 } from "recharts";
 
 import { ToastContainer, toast } from "react-toastify";
+import { showHighRiskAlert } from "./utils/alerts";
 import "react-toastify/dist/ReactToastify.css";
 
 import { ThemeProvider } from "./context/ThemeContext";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
+import ChatAssistant from "./components/ChatAssistant";
 import UsageTrends from "./pages/UsageTrends";
 import Forecasts from "./pages/Forecasts";
 import Reports from "./pages/Reports";
@@ -32,94 +34,9 @@ import IntroPage from "./pages/IntroPage";
 import ModelMonitoring from "./pages/ModelMonitoring";
 import MultiRegionDashboard from "./pages/MultiRegionDashboard";
 
-/* ------------ ALERT HELPER (STEP 3) ------------ */
-
-export function showHighRiskAlert({ resource, usage, threshold }) {
-  toast.error(
-    `${resource} demand is ${usage}% (threshold ${threshold}%) — High Risk`,
-    {
-      pauseOnHover: true,
-      closeOnClick: true,
-    }
-  );
-}
+/* ------------ ALERT HELPER (moved to utils) ------------ */
 
 /* ---------------- CHAT ASSISTANT COMPONENT ---------------- */
-
-function ChatAssistant({ isOpen, onClose }) {
-  const [messages, setMessages] = useState([
-    {
-      from: "bot",
-      text: "Hi! Ask me anything about your Azure demand, usage or forecasts.",
-    },
-  ]);
-  const [input, setInput] = useState("");
-
-  const handleSend = () => {
-    if (!input.trim()) return;
-
-    const userMsg = { from: "user", text: input };
-    const botMsg = {
-      from: "bot",
-      text:
-        "This is a placeholder reply. Later I can explain your charts and forecasts in simple words based on real data.",
-    };
-
-    setMessages((prev) => [...prev, userMsg, botMsg]);
-    setInput("");
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed bottom-4 right-4 w-80 md:w-96 h-96 bg-white dark:bg-gray-900 shadow-2xl rounded-2xl border border-gray-200 dark:border-gray-700 flex flex-col z-50">
-      {/* Header */}
-      <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-          Forecast Assistant
-        </h2>
-        <button
-          onClick={onClose}
-          className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-sm">
-        {messages.map((m, idx) => (
-          <div
-            key={idx}
-            className={`max-w-[85%] px-3 py-2 rounded-xl ${m.from === "user"
-              ? "ml-auto bg-blue-600 text-white"
-              : "mr-auto bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100"
-              }`}
-          >
-            {m.text}
-          </div>
-        ))}
-      </div>
-
-      {/* Input */}
-      <div className="p-2 border-t border-gray-200 dark:border-gray-700 flex gap-2">
-        <input
-          className="flex-1 text-sm px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Ask about your usage or forecasts..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-        />
-        <button
-          onClick={handleSend}
-          className="px-3 py-2 text-xs font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700"
-        >
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------- KPI & CHART COMPONENTS ---------------- */
 
@@ -177,12 +94,12 @@ function SystemUsageTable({ forecastData = [], storageData = [] }) {
 
   // Use forecast data if available, otherwise use fallback
   const cpuUsageData = forecastData.length > 0
-    ? forecastData.slice(0, 7).map(v => Math.round(v))
+    ? forecastData.slice(0, 7).map(v => Number(Number(v).toFixed(2)))
     : labels.map(() => 0);
 
   // Use real storage data if available, otherwise fallback
   const storageUsageData = storageData.length > 0
-    ? storageData.slice(0, 7).map(v => Math.round(v))
+    ? storageData.slice(0, 7).map(v => Number(Number(v).toFixed(2)))
     : labels.map(() => 0);
 
   return (
@@ -200,20 +117,37 @@ function SystemUsageTable({ forecastData = [], storageData = [] }) {
             </tr>
           </thead>
           <tbody>
-            {labels.map((day, index) => (
-              <tr
-                key={day}
-                className="hover:bg-[#b7d2f7]/30 dark:hover:bg-gray-800 transition-colors duration-200"
-              >
-                <td className="py-3 px-4 border">{day}</td>
-                <td className="py-3 px-4 border font-medium text-[#5c89af] dark:text-blue-300">
-                  {cpuUsageData[index]}%
-                </td>
-                <td className="py-3 px-4 border font-medium text-[#5ca28f] dark:text-green-300">
-                  {storageUsageData[index]} GB
-                </td>
-              </tr>
-            ))}
+            {labels.map((day, index) => {
+              const cpu = cpuUsageData[index] ?? 0;
+              const risk = cpu >= 90 ? "Critical" : cpu >= 80 ? "High" : "OK";
+              const riskClass =
+                risk === "Critical"
+                  ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                  : risk === "High"
+                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+              return (
+                <tr
+                  key={day}
+                  className="hover:bg-[#b7d2f7]/30 dark:hover:bg-gray-800 transition-colors duration-200"
+                >
+                  <td className="py-3 px-4 border">{day}</td>
+                  <td className="py-3 px-4 border font-medium text-[#5c89af] dark:text-blue-300">
+                    {cpu}%
+                    <button
+                      type="button"
+                      onClick={() => showHighRiskAlert({ resource: `CPU ${day}`, usage: cpu, threshold: 80 })}
+                      className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${riskClass}`}
+                    >
+                      {risk}
+                    </button>
+                  </td>
+                  <td className="py-3 px-4 border font-medium text-[#5ca28f] dark:text-green-300">
+                    {storageUsageData[index]} GB
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -405,7 +339,7 @@ function DashboardLayout() {
           : avgForecast * 0.85;
 
         // Fetch model metrics
-        const metricsResponse = await fetchMetrics();
+        await fetchMetrics();
 
         // Generate days array
         const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -470,7 +404,7 @@ function DashboardLayout() {
         setLineChartData(
           days.slice(0, Math.min(7, forecastValues.length)).map((day, idx) => ({
             name: day,
-            value: Math.round(forecastValues[idx] || avgForecast),
+            value: Number(Number(forecastValues[idx] || avgForecast).toFixed(2)),
           }))
         );
         setStorageChartData(storageValues);

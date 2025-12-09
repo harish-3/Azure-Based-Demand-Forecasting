@@ -26,9 +26,12 @@ export default function IntroPage() {
         transition={{ duration: 1 }}
         className="max-w-4xl px-6"
       >
-        <h1 className="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white mb-6">
-          Azure Demand Forecasting and Optimization System
-        </h1>
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <img src="/logo.svg" alt="Azure Forcasting logo" className="w-12 h-12 rounded-2xl shadow-md" />
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white">
+            Azure Forcasting and Optimization System
+          </h1>
+        </div>
 
         <p className="text-lg text-gray-700 dark:text-gray-300 mb-8 leading-relaxed">
           Welcome to your AI-powered Azure resource management dashboard. This

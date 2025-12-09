@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Line } from "react-chartjs-2";
 import { motion, AnimatePresence } from "framer-motion";
-import { fetchReport, fetchOptimization } from "../services/api";
+import { fetchReport, fetchOptimization, downloadReportPdf } from "../services/api";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -73,13 +73,14 @@ export default function Reports() {
         // Use forecast data for forecast tab
         const foreValues = foreLabels.map((_, i) => {
           if (i < predictions.length) {
-            return Math.round(predictions[i] || avgForecast);
+            const v = predictions[i] ?? avgForecast;
+            return Number(Number(v).toFixed(2));
           }
-          // Extend forecast if needed
           const trend = predictions.length > 0 
             ? (predictions[predictions.length - 1] - predictions[0]) / predictions.length
             : 0;
-          return Math.round(avgForecast + (i - predictions.length) * trend);
+          const v = avgForecast + (i - predictions.length) * trend;
+          return Number(Number(v).toFixed(2));
         });
 
         setForecastData({
@@ -154,8 +155,31 @@ export default function Reports() {
     },
   };
 
-  const handleDownload = (type) => {
-    alert(`📊 Downloading ${type} report...`);
+  const handleDownload = async (type) => {
+    try {
+      if (type === "Forecast") {
+        await handleDownloadPDF();
+        return;
+      }
+      if (type === "Performance" && performanceData?._raw) {
+        const header = "Month,Value\n";
+        const rows = (performanceData.labels || []).map((m, i) => `${m},${performanceData._raw[i] ?? ""}`).join("\n");
+        const csv = header + rows;
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "performance_report.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      }
+      alert(`Report download unavailable: ${type}`);
+    } catch (e) {
+      alert(`Failed to download ${type} report: ${e.message}`);
+    }
   };
 
   // Fetch recommendations from backend
@@ -246,6 +270,22 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadPDF = async () => {
+    try {
+      const blob = await downloadReportPdf();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "insights_report.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Failed to download PDF: ${e.message}`);
+    }
+  };
+
   const tabs = [
     {
       id: "performance",
@@ -271,7 +311,7 @@ export default function Reports() {
   const perfSummary = useMemo(() => {
     if (!performanceData?._raw) return null;
     const arr = performanceData._raw;
-    const avg = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+    const avg = Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100;
     const min = Math.min(...arr);
     const max = Math.max(...arr);
     return { avg, min, max };
@@ -280,7 +320,7 @@ export default function Reports() {
   const foreSummary = useMemo(() => {
     if (!forecastData?._raw) return null;
     const arr = forecastData._raw;
-    const avg = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+    const avg = Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100;
     const min = Math.min(...arr);
     const max = Math.max(...arr);
     return { avg, min, max };
@@ -457,10 +497,10 @@ export default function Reports() {
             ⬇️ Download Forecast Report (CSV)
           </button>
           <button
-            disabled
-            className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500 cursor-not-allowed"
+            onClick={handleDownloadPDF}
+            className="px-3 py-2 text-xs font-medium rounded-lg bg-[#b7d2f7] text-[#1f2937] hover:bg-[#99bde7] shadow-sm dark:bg-fuchsia-600 dark:text-white dark:hover:bg-fuchsia-500"
           >
-            ⬇️ Download Forecast Report (Excel/PDF)
+            ⬇️ Download Forecast Report (PDF)
           </button>
         </div>
       </div>

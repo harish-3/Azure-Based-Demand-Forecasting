@@ -11,6 +11,7 @@ Flask REST API for CPU demand forecasting with:
 """
 
 from flask import Flask, jsonify, request
+from flask import send_file
 from flask_cors import CORS
 import joblib
 import pandas as pd
@@ -36,27 +37,66 @@ print("🚀 Azure Demand Forecasting API - Starting Up...")
 print("=" * 60)
 
 try:
-    # Load trained CPU demand model
     cpu_model_path = os.path.join("models", "rf_cpu_model.pkl")
     cpu_model = joblib.load(cpu_model_path)
     print(f"✅ Loaded CPU model from: {cpu_model_path}")
 
-    # Load trained Storage demand model
     storage_model_path = os.path.join("models", "storage_demand_model.pkl")
     storage_model = joblib.load(storage_model_path)
     print(f"✅ Loaded Storage model from: {storage_model_path}")
-    
-    # Load ML-ready dataset
+
     data_path = os.path.join("data", "feature_engineered", "mlmodeltrainingdataset.csv")
-    df = pd.read_csv(data_path)
-    print(f"✅ Loaded dataset from: {data_path}")
+
+    if os.path.exists(data_path):
+        df = pd.read_csv(data_path)
+        print(f"✅ Loaded dataset from: {data_path}")
+    else:
+        print("⚠️ Dataset not found. Creating a minimal synthetic dataset for runtime.")
+
+        features_cpu = list(getattr(cpu_model, "feature_names_in_", []))
+        features_storage = list(getattr(storage_model, "feature_names_in_", []))
+
+        base_cols = [
+            "usage_cpu",
+            "usage_storage",
+            "users_active",
+            "month",
+            "year",
+            "is_weekend",
+            "economic_index",
+            "cloud_market_demand",
+        ]
+
+        all_features = sorted(set(features_cpu) | set(features_storage) | set(base_cols))
+
+        rows = []
+        for i in range(14):
+            row = {}
+            row["usage_cpu"] = 60 + (i % 7)
+            row["usage_storage"] = 50 + (i % 5)
+            row["users_active"] = 1000 + (i * 10)
+            row["month"] = (i % 12) + 1
+            row["year"] = 2024
+            row["is_weekend"] = 1 if (i % 7) in (5, 6) else 0
+            row["economic_index"] = 100.0
+            row["cloud_market_demand"] = 80.0
+
+            for col in all_features:
+                if col not in row:
+                    row[col] = 0.0
+
+            rows.append(row)
+
+        df = pd.DataFrame(rows, columns=all_features)
+        print("✅ Synthetic dataset created in-memory.")
+
     print(f"   Dataset shape: {df.shape}")
-    print(f"   Features: {len(cpu_model.feature_names_in_)}")
-    
+    print(f"   Features: {len(getattr(cpu_model, 'feature_names_in_', []))}")
+
     print("=" * 60)
     print("✅ Initialization Complete - API Ready!")
     print("=" * 60)
-    
+
 except Exception as e:
     print("=" * 60)
     print(f"❌ ERROR during initialization: {str(e)}")
@@ -184,6 +224,57 @@ def predict_cpu():
         }), 500
 
 
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    try:
+        payload = request.get_json() or {}
+        messages = payload.get("messages", [])
+
+        user_msg = None
+        for m in messages[::-1]:
+            if m.get("role") == "user" and m.get("content"):
+                user_msg = m["content"]
+                break
+
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if api_key:
+            import requests
+            base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+            model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+            body = {"model": model, "messages": messages or [{"role": "user", "content": user_msg or ""}]}
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            r = requests.post(f"{base_url}/chat/completions", headers=headers, json=body, timeout=20)
+            if r.ok:
+                data = r.json()
+                text = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+                return jsonify({"reply": text})
+        forecast_7 = recursive_forecast_cpu(df, cpu_model, n_days=7)
+        avg_forecast = float(np.mean(forecast_7)) if forecast_7 else 0.0
+        min_forecast = float(np.min(forecast_7)) if forecast_7 else 0.0
+        max_forecast = float(np.max(forecast_7)) if forecast_7 else 0.0
+        trend = "increasing" if forecast_7 and forecast_7[-1] > forecast_7[0] else "decreasing"
+        analysis_reply = None
+        try:
+            suggestion = analyze_capacity(forecast_7, capacity=10000)
+            analysis_reply = suggestion.get("recommendation", "Monitor usage closely")
+        except Exception:
+            analysis_reply = "Capacity planning data is currently unavailable."
+        reply_parts = []
+        if user_msg:
+            reply_parts.append(f"Question: {user_msg}")
+        reply_parts.append(
+            f"7-day CPU forecast summary: avg {round(avg_forecast,2)}%, min {round(min_forecast,2)}%, max {round(max_forecast,2)}%. Trend is {trend}."
+        )
+        reply_parts.append(f"Recommendation: {analysis_reply}")
+        return jsonify({"reply": " \n".join(reply_parts)})
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 # Region multipliers for simulation
 REGION_MULTIPLIERS = {
     "East": 1.0,
@@ -192,7 +283,7 @@ REGION_MULTIPLIERS = {
     "South": 1.05,
     "East US": 1.0, 
     "West Europe": 0.95,
-    "Central India": 1.2
+    "Central India": 1.05
 }
 
 @app.route("/api/forecast_7", methods=["GET"])
@@ -210,15 +301,25 @@ def forecast_7():
         
         # Apply regional variation
         multiplier = REGION_MULTIPLIERS.get(region, 1.0)
-        predictions_cpu = [round(p * multiplier, 2) for p in predictions_cpu]
+        predictions_cpu = [round(min(max(p * multiplier, 0), 100), 2) for p in predictions_cpu]
         predictions_storage = [round(p * multiplier, 2) for p in predictions_storage]
+
+        # Confidence intervals (simple ±15% band)
+        ci_lower_cpu = [round(min(max(p * 0.85, 0), 100), 2) for p in predictions_cpu]
+        ci_upper_cpu = [round(min(max(p * 1.15, 0), 100), 2) for p in predictions_cpu]
+        ci_lower_storage = [round(p * 0.85, 2) for p in predictions_storage]
+        ci_upper_storage = [round(p * 1.15, 2) for p in predictions_storage]
         
         return jsonify({
             "forecast_days": 7,
             "region": region,
-            "predictions": predictions_cpu,          # Kept for backward compat
-            "predictions_cpu": predictions_cpu,      # Explicit name
-            "predictions_storage": predictions_storage # New field
+            "predictions": predictions_cpu,
+            "predictions_cpu": predictions_cpu,
+            "predictions_storage": predictions_storage,
+            "ci_lower_cpu": ci_lower_cpu,
+            "ci_upper_cpu": ci_upper_cpu,
+            "ci_lower_storage": ci_lower_storage,
+            "ci_upper_storage": ci_upper_storage
         })
         
     except Exception as e:
@@ -243,15 +344,25 @@ def forecast_30():
         
         # Apply regional variation
         multiplier = REGION_MULTIPLIERS.get(region, 1.0)
-        predictions_cpu = [round(p * multiplier, 2) for p in predictions_cpu]
+        predictions_cpu = [round(min(max(p * multiplier, 0), 100), 2) for p in predictions_cpu]
         predictions_storage = [round(p * multiplier, 2) for p in predictions_storage]
+
+        # Confidence intervals (simple ±15% band)
+        ci_lower_cpu = [round(min(max(p * 0.85, 0), 100), 2) for p in predictions_cpu]
+        ci_upper_cpu = [round(min(max(p * 1.15, 0), 100), 2) for p in predictions_cpu]
+        ci_lower_storage = [round(p * 0.85, 2) for p in predictions_storage]
+        ci_upper_storage = [round(p * 1.15, 2) for p in predictions_storage]
         
         return jsonify({
             "forecast_days": 30,
             "region": region,
-            "predictions": predictions_cpu,          # Kept for backward compat
-            "predictions_cpu": predictions_cpu,      # Explicit name
-            "predictions_storage": predictions_storage # New field
+            "predictions": predictions_cpu,
+            "predictions_cpu": predictions_cpu,
+            "predictions_storage": predictions_storage,
+            "ci_lower_cpu": ci_lower_cpu,
+            "ci_upper_cpu": ci_upper_cpu,
+            "ci_lower_storage": ci_lower_storage,
+            "ci_upper_storage": ci_upper_storage
         })
         
     except Exception as e:
@@ -259,6 +370,109 @@ def forecast_30():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+@app.route("/api/alerts", methods=["GET"]) 
+def alerts():
+    try:
+        threshold_cpu = float(request.args.get("threshold_cpu", 80))
+        predictions = recursive_forecast_cpu(df, cpu_model, n_days=7)
+        next_week = float(predictions[-1]) if predictions else 0.0
+        alerts = []
+        if next_week > threshold_cpu:
+            alerts.append({
+                "type": "cpu_threshold",
+                "message": f"CPU forecast {round(next_week,2)}% exceeds threshold {threshold_cpu}%",
+                "severity": "high",
+                "value": round(next_week, 2),
+                "threshold": threshold_cpu
+            })
+        return jsonify({"alerts": alerts})
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+@app.route("/api/what_if", methods=["POST"]) 
+def what_if():
+    try:
+        data = request.get_json() or {}
+        workload_delta = float(data.get("workload_delta", 0))
+        traffic_delta = float(data.get("traffic_delta", 0))
+
+        cpu_forecast = recursive_forecast_cpu(df, cpu_model, n_days=7)
+        storage_forecast = recursive_forecast_storage(df, storage_model, n_days=7)
+
+        cpu_factor = 1.0 + workload_delta / 100.0
+        storage_factor = 1.0 + traffic_delta / 100.0
+
+        simulated_cpu = [round(p * cpu_factor, 2) for p in cpu_forecast]
+        simulated_storage = [round(p * storage_factor, 2) for p in storage_forecast]
+
+        return jsonify({
+            "base_cpu": cpu_forecast,
+            "base_storage": storage_forecast,
+            "simulated_cpu": simulated_cpu,
+            "simulated_storage": simulated_storage,
+            "workload_delta": workload_delta,
+            "traffic_delta": traffic_delta
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+@app.route("/api/report_pdf", methods=["GET"]) 
+def report_pdf():
+    try:
+        # Generate forecast for chart
+        forecast_7 = recursive_forecast_cpu(df, cpu_model, n_days=7)
+
+        # Create a simple chart image using matplotlib
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.plot(range(1, len(forecast_7)+1), forecast_7, color="#f97316", linewidth=2)
+        ax.fill_between(range(1, len(forecast_7)+1),
+                        [p*0.85 for p in forecast_7],
+                        [p*1.15 for p in forecast_7],
+                        color="#4f46e5", alpha=0.2)
+        ax.set_title("7-Day CPU Forecast")
+        ax.set_xlabel("Day")
+        ax.set_ylabel("CPU %")
+        chart_path = os.path.join("reports", "forecast_chart.png")
+        os.makedirs("reports", exist_ok=True)
+        fig.tight_layout()
+        fig.savefig(chart_path)
+        plt.close(fig)
+
+        # Build PDF with reportlab
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+
+        pdf_path = os.path.join("reports", "insights_report.pdf")
+        c = canvas.Canvas(pdf_path, pagesize=A4)
+        width, height = A4
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(2*cm, height - 2*cm, "Azure Demand Forecasting — Insights Report")
+
+        c.setFont("Helvetica", 11)
+        c.drawString(2*cm, height - 3*cm, "Summary of past usage, forecast outlook, risk analysis, and recommendations.")
+
+        # Insert chart
+        c.drawImage(chart_path, 2*cm, height - 10*cm, width=17*cm, height=6*cm)
+
+        # Add simple metrics
+        avg_val = float(np.mean(forecast_7)) if forecast_7 else 0.0
+        min_val = float(np.min(forecast_7)) if forecast_7 else 0.0
+        max_val = float(np.max(forecast_7)) if forecast_7 else 0.0
+        c.setFont("Helvetica", 11)
+        c.drawString(2*cm, height - 11*cm, f"Average forecast: {round(avg_val,2)}%")
+        c.drawString(2*cm, height - 11.7*cm, f"Min forecast: {round(min_val,2)}%")
+        c.drawString(2*cm, height - 12.4*cm, f"Max forecast: {round(max_val,2)}%")
+
+        c.showPage()
+        c.save()
+
+        return send_file(pdf_path, mimetype="application/pdf", as_attachment=True, download_name="insights_report.pdf")
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/capacity_planning", methods=["POST"])
@@ -521,4 +735,4 @@ if __name__ == "__main__":
     print("📍 Access the API at: http://localhost:5000")
     print("=" * 60 + "\n")
     
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=5000, threaded=True)

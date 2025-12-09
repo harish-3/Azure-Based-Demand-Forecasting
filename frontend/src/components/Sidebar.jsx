@@ -87,19 +87,15 @@ export default function Sidebar({ onSelect }) {
         <div>
           {/* Logo + mini tagline */}
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div
-              className="w-11 h-11 flex items-center justify-center rounded-2xl 
-                 bg-gradient-to-br from-[#b7d2f7] to-[#225577] shadow-lg border border-white/10"
-            >
-              <span className="text-lg font-extrabold text-white">A</span>
-            </div>
+            <img
+              src="/logo.svg"
+              alt="Azure Forcasting logo"
+              className="w-11 h-11 rounded-2xl border border-white/10 shadow-lg"
+              loading="lazy"
+            />
             <div className="transition-all duration-300 opacity-100 lg:opacity-0 group-hover:lg:opacity-100 whitespace-nowrap overflow-hidden">
-              <h2 className="text-sm font-semibold tracking-wide">
-                Azure Control Hub
-              </h2>
-              <p className="text-[11px] text-gray-400">
-                Usage · Forecasts · KPIs
-              </p>
+              <h2 className="text-sm font-semibold tracking-wide">Azure Forcasting Hub</h2>
+              <p className="text-[11px] text-gray-400">Usage · Forecasts · KPIs</p>
             </div>
           </div>
 

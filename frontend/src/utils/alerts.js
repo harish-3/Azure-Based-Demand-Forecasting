@@ -9,11 +9,3 @@ export function showHighRiskAlert({ resource, usage, threshold }) {
     }
   );
 }
-
-export function showWarningAlert(message) {
-  toast.warn(message);
-}
-
-export function showInfoAlert(message) {
-  toast.info(message);
-}

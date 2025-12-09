@@ -26,6 +26,8 @@ async function apiRequest(endpoint, options = {}) {
   }
 }
 
+export { apiRequest };
+
 // ==================== Backend API Functions ====================
 
 /**
@@ -106,6 +108,32 @@ export async function fetchReport(capacity = 10000, mape = 8.5) {
  */
 export async function fetchMultiRegion(regions = "East US,West Europe,Central India") {
   return apiRequest(`/api/multi_region?regions=${encodeURIComponent(regions)}`);
+}
+
+/**
+ * What-if simulation
+ */
+export async function fetchWhatIf(workloadDelta = 0, trafficDelta = 0) {
+  return apiRequest("/api/what_if", {
+    method: "POST",
+    body: JSON.stringify({ workload_delta: workloadDelta, traffic_delta: trafficDelta }),
+  });
+}
+
+/**
+ * Download Insights Report PDF
+ */
+export async function downloadReportPdf() {
+  const res = await fetch(`${BASE_URL}/api/report_pdf`);
+  if (!res.ok) throw new Error(`Failed to download PDF: ${res.statusText}`);
+  return await res.blob();
+}
+
+/**
+ * Get alerts (e.g., CPU threshold notifications)
+ */
+export async function fetchAlerts(thresholdCpu = 80) {
+  return apiRequest(`/api/alerts?threshold_cpu=${encodeURIComponent(thresholdCpu)}`);
 }
 
 // ==================== Legacy/Compatibility Functions ====================
